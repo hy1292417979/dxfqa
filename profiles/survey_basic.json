@@ -1,0 +1,1 @@
+{"allowed_dim_styles":["STD_DIM"],"allowed_text_styles":["STD"],"close_tolerance":0.05,"flag_layer_zero":true,"required_attribs":{"SURVEY_POINT":["PT_ID","ELEV"],"TITLE_BLOCK":["DWG_NO","SCALE","DATE"]}}

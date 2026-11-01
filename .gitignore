@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+*.log
+
+# Test / coverage artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+fixtures/*.dxf
+!fixtures/make_fixtures.py
+fixtures/manifest.json
+
+# Local run outputs (reports and fixed files are generated, not source)
+*.fixed.dxf
+out.html
+out.json
+report.html
+report.json
+
+# Real project drawings — NEVER commit these (synthetic fixtures only)
+*.dwg

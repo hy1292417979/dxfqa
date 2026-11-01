@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DXF 图面质检：一键查出图纸里的硬伤 | DXF Drawing QA</title>
+<style>
+  body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:860px;margin:0 auto;padding:2em 1.2em;color:#1a1a1a;line-height:1.7}
+  h1{font-size:1.9em;line-height:1.3;margin-bottom:.2em}
+  .en{color:#555;font-size:1rem;font-weight:400}
+  .lead{font-size:1.1em;color:#333}
+  .box{border:1px solid #ddd;border-radius:10px;padding:1em 1.2em;margin:1.2em 0;background:#fafafa}
+  .num{display:flex;flex-wrap:wrap;gap:.8em;margin:1em 0}
+  .stat{flex:1 1 160px;border:1px solid #ddd;border-radius:8px;padding:.8em;text-align:center;background:#fff}
+  .stat b{display:block;font-size:1.7em;line-height:1.2}
+  table{border-collapse:collapse;width:100%;margin:.8em 0;font-size:.95em}
+  th,td{border:1px solid #ddd;padding:.45em .6em;text-align:left;vertical-align:top}
+  th{background:#f0f0f0}
+  code{font-size:.9em;background:#f0f0f0;padding:.1em .35em;border-radius:4px}
+  .warn{background:#fff8e6;border-color:#e6c87a}
+  .muted{color:#666;font-size:.9em}
+  ul{padding-left:1.4em}
+  li{margin:.25em 0}
+  footer{margin-top:2em;border-top:1px solid #ddd;padding-top:1em}
+</style>
+</head>
+<body>
+
+<h1>DXF 图面质检：交图之前，先查一遍<br><span class="en">DXF Drawing QA — catch drawing defects before delivery.</span></h1>
+<p class="lead">上传一个 DXF 文件，得到一份质检报告：重复图元、未闭合边界、宗地重叠、自相交、建筑物出宗地、缺失属性……能自动修的安全项直接修好给回你，原文件绝不动；修不了的只标出来、不偷偷改你的图形。</p>
+<p class="lead">Upload a DXF, get a QA report. Safe items are auto-fixed into a <em>new</em> file; your original is never modified. Geometry defects are flagged, never silently reshaped.</p>
+
+<div class="box">
+<h2>实测数据 · Measured results（不是宣传数字）</h2>
+<div class="num">
+  <div class="stat"><b>23 / 23</b>测绘风格语料检出率<br><span class="muted">2,339 个图元的缺陷文件，0 漏报、0 多报</span></div>
+  <div class="stat"><b>0</b>干净文件误报<br><span class="muted">2,315 个图元的干净文件：0 findings</span></div>
+  <div class="stat"><b>26 / 26</b>标准测试集检出<br><span class="muted">6 个带已知缺陷的测试文件，16 项修复全命中</span></div>
+  <div class="stat"><b>6 项</b>自动修复<br><span class="muted">复查后残留 17 项，全部是按设计只标不改的项</span></div>
+</div>
+<p class="muted">测量口径（2026-10-29 本地实测复现，与 2026-10-28 语料验证报告一致）：对缺陷语料文件执行 <code>cli.py check --config day3_corpus/profile.json --fix</code>，输出 23 findings（error 10 / warning 11 / info 2）、6 fixes、147 个闭合多边形、总面积 65520.0013；复查修复后文件为 17 findings、0 可修复残留；干净文件为 0 findings。冷启动含解释器与 ezdxf 载入约 2.2 秒；此前暖机实测约 1.2 秒。另有 10,000 图元基准（2026-10-27）：全流程约 1.7 秒、峰值内存 76 MB。测试套件：pytest 22 passed（2026-10-29 复测）。</p>
+<p class="muted">How to read this: 23 planted defects were detected on a realistic surveying-style corpus (2,339 entities); the clean twin file (2,315 entities) produced zero findings. After auto-fix, re-checking leaves 17 findings — all flag-only by design (topology, zero-length geometry, attribute problems), zero fixable residuals.</p>
+</div>
+
+<h2>它查什么 · What it checks（18 条规则，全部来自引擎代码）</h2>
+<table>
+<tr><th>类别</th><th>规则</th><th>查什么</th></tr>
+<tr><td>图层</td><td><code>LAYER-DEFPOINTS</code> / <code>LAYER-ZERO</code> / <code>LAYER-EMPTY</code></td><td>图元落在不打印的 Defpoints 层、落在 0 层、定义了却没用过的空图层</td></tr>
+<tr><td>几何</td><td><code>GEOM-ZERO-LENGTH</code> / <code>GEOM-DEGENERATE</code></td><td>零长度直线、只有一个点的多段线、半径 ≤ 0 的圆/弧</td></tr>
+<tr><td>多段线</td><td><code>PLINE-UNCLOSED</code></td><td>未闭合且端点间距 ≤ 容差（语料配置 0.05）的多段线</td></tr>
+<tr><td>重复</td><td><code>ENT-DUPLICATE</code></td><td>类型 + 图层 + 几何签名完全相同的重复图元</td></tr>
+<tr><td>拓扑</td><td><code>TOPO-SELF-INTERSECT</code> / <code>TOPO-OVERLAP</code> / <code>TOPO-CONTAINMENT</code> / <code>TOPO-DUP-VERTEX</code></td><td>边界自相交（蝴蝶结多边形）、同层多边形重叠、建筑物不在宗地内、重复/近重复顶点</td></tr>
+<tr><td>注记与样式</td><td><code>TEXT-EMPTY</code> / <code>STYLE-TEXT-NONSTD</code> / <code>STYLE-DIM-NONSTD</code> / <code>STYLE-UNUSED</code></td><td>空文字、文字/标注样式不在标准集内、定义了却没用过的样式</td></tr>
+<tr><td>图块属性</td><td><code>BLOCK-ATTR-MISSING</code> / <code>BLOCK-ATTR-DUP</code> / <code>BLOCK-ATTR-EMPTY</code></td><td>测点图块缺必填属性（如 ELEV）、同一属性出现两次、属性值为空</td></tr>
+</table>
+<p><strong>能自动修的（安全项）：</strong>删重复图元 <code>FIX-DUP</code>、闭合小缺口 <code>FIX-CLOSE</code>、按配置重映射图层/样式 <code>FIX-REMAP-*</code>、清理空图层与无用样式 <code>FIX-PURGE-*</code>。<strong>只标不改的：</strong>零长度/退化几何、全部拓扑问题、属性问题——这些改动需要人判断。</p>
+
+<h2>前后对比 · Before / after（取自匿名测试语料，非真实项目数据）</h2>
+<p class="muted">以下示例来自本地生成的测试语料（坐标为虚构的隔离测试区），仅用于说明报告长什么样。</p>
+<table>
+<tr><th>问题</th><th>检查前 Before</th><th>检查后 After</th></tr>
+<tr><td>宗地重叠<br><code>TOPO-OVERLAP</code></td><td>两宗地 (1000,0)–(1030,20) 与 (1015,0)–(1045,20) 重叠 <b>300 平方单位</b></td><td>标为 error，附重叠面积；<b>不自动改边界</b>，等人确认</td></tr>
+<tr><td>边界未闭合<br><code>PLINE-UNCLOSED</code></td><td>道路多段线端点缺口 0.02（容差 0.05 内）</td><td><code>FIX-CLOSE</code> 吸附端点并置闭合标志，复查后该项消失</td></tr>
+<tr><td>重复图元<br><code>ENT-DUPLICATE</code></td><td>同一 FENCE 直线出现 3 次、同一测点出现 2 次</td><td><code>FIX-DUP</code> 各保留首次出现，共删 3 个重复</td></tr>
+<tr><td>建筑物出宗地<br><code>TOPO-CONTAINMENT</code></td><td>一栋建筑横跨宗地边界 x=30，另一栋完全在宗地外</td><td>标为 error；<b>不自动挪建筑物</b>，等人确认</td></tr>
+<tr><td>测点属性缺失<br><code>BLOCK-ATTR-MISSING</code></td><td>测点图块缺 <code>ELEV</code> 属性；另有 <code>PT_ID</code> 重复、<code>ELEV</code> 为空各 1 处</td><td>标为 error / warning；<b>不自动编造高程</b>，等人补录</td></tr>
+<tr><td>空图层与无用样式</td><td>空图层 <code>JUNK_EMPTY</code>、无用样式 <code>UNUSED_TXT</code></td><td><code>FIX-PURGE-*</code> 清理，复查后消失</td></tr>
+</table>
+<p>整份语料汇总：23 项问题中 6 项自动修好，17 项留待人工处理——报告会把这两类分开列，不混在一起让你猜。</p>
+
+<div class="box warn">
+<h2>现在不能做什么 · Honest limits</h2>
+<ul>
+<li><strong>只支持 DXF，不支持 DWG。</strong>DWG 输入需要另行验证转换工具的商用条款。</li>
+<li>重复判定目前是<strong>精确重复</strong>；近似重复（同形不同层、共线重叠）暂不判定。</li>
+<li>没有缝隙/碎片（gap/sliver）检测，没有批量打包、没有收费功能——这些都在“以后”清单里，不在这页假装已有。</li>
+<li>本页是静态演示页，尚未公开发布、不收集任何文件与信息。正式试用形态是本地的上传式网页壳（web.py：上传 → HTML 报告 → 修复后文件下载，20 MB 上限，文件不落盘留存）。</li>
+</ul>
+</div>
+
+<h2>适合谁 · Who it's for</h2>
+<p>测绘成果质检、地籍 / 房产测绘出图前自查、CAD 交付前的图层与拓扑清理。尤其适合“图已经画完、就怕交出去被退回”的环节：先机器扫一遍，把低级问题在内部消化掉。</p>
+<p class="muted">For surveying / cadastral / civil CAD teams doing pre-delivery self-checks: catch the low-level defects before the client or the reviewer does.</p>
+
+<footer>
+<p class="muted">演示页 · Demo page (static, no tracking, no uploads, no personal information). 实测数据来源：本地引擎 CLI 实测（2026-10-29）与语料验证报告（2026-10-28）。规则清单与引擎代码 <code>src/dxfqa/</code> 一致；如有出入，以代码为准。</p>
+</footer>
+</body>
+</html>
