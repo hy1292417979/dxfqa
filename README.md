@@ -169,6 +169,13 @@ buildings — no false positives at that scale either).
 `demo/index.html` is a standalone static page (no tracking, no uploads)
 showing a sample report from the corpus run above.
 
+## Premium pack
+
+A US$15 premium pack adds a batch CLI, an offline web UI (single +
+batch ZIP), DXF-to-GeoJSON export and two extra profiles on top of
+this free checker — see [PREMIUM.md](PREMIUM.md) for contents, honest
+limits and how to buy.
+
 ## Licence
 
 MIT — see `LICENSE`. Note: the copyright-holder line in `LICENSE` is a
